@@ -9,6 +9,8 @@
 #define STACK_SIZE SIGSTKSZ
 // In miliseconds
 #define DEFAULT_INTERVAL 10
+#define INTERVAL_USEC(i) (i * 1000) % 1000000
+#define INTERVAL_SEC(i) i / 1000
 
 tcb *globalTCB;
 ucontext_t *schedule_contex;
@@ -58,7 +60,7 @@ int mypthread_create(mypthread_t *thread, pthread_attr_t *attr, void *(*function
 
 		quitqueue = makeQueue();
 
-		tcb *tempTCB = (struct tcb *)malloc(sizeof(tcb));
+		tcb *tempTCB = (tcb *)malloc(sizeof(tcb));
 		tempTCB->ID = mpt_id;
 		mpt_id++;
 		tempTCB->status = RUNNING;
@@ -80,7 +82,7 @@ int mypthread_create(mypthread_t *thread, pthread_attr_t *attr, void *(*function
 		globalTCB = tempTCB;
 	}
 
-	tcb *temp2TCB = (struct tcb *)malloc(sizeof(tcb));
+	tcb *temp2TCB = (tcb *)malloc(sizeof(tcb));
 	temp2TCB->ID = mpt_id;
 	*thread = mpt_id;
 	mpt_id++;
@@ -319,7 +321,7 @@ static void schedule()
 	// be sure to check the SCHED definition to determine which scheduling algorithm you should run
 	//   i.e. RR, PSJF or MLFQ
 	if(!PSJF)
-		sched_rr(DEFAULT_INTERVAL);
+		sched_RR(DEFAULT_INTERVAL);
 	else
 		sched_PSJF(DEFAULT_INTERVAL);
 
@@ -378,9 +380,9 @@ static void sched_RR(int quant)
 
 		if (globalTCB->quant == 0)
 		{
-			struct timeval initial_schedule_time;
-			gettimeofday(&initial_schedule_time, NULL);
-			responseTime = ((initial_schedule_time.tv_sec * 1000000 + initial_schedule_time.tv_usec) - (globalTCB->birthtime.tv_sec * 1000000 + globalTCB->birthtime.tv_usec));
+			struct timeval initialTime;
+			gettimeofday(&initialTime, NULL);
+			responseTime = ((initialTime.tv_sec * 1000000 + initialTime.tv_usec) - (globalTCB->birthtime.tv_sec * 1000000 + globalTCB->birthtime.tv_usec));
 		}
 		globalTCB->quant++;
 		runtimer(quant);
@@ -398,15 +400,15 @@ static void sched_RR(int quant)
 }
 
 /* Preemptive PSJF (STCF) scheduling algorithm */
-static void sched_PSJF()
+static void sched_PSJF(int quant)
 {
 	// YOUR CODE HERE
 
 	// Your own implementation of PSJF (STCF)
 	// (feel free to modify arguments and return types)
 
-	sortQueue(psjfqueue);
-	sched_RR(DEFAULT_INTERVAL);
+	sortqueue(psjfqueue);
+	sched_RR(quant);
 
 	return;
 }
@@ -514,3 +516,39 @@ void sortqueue(struct Queue *q)
 	unblockSignalProf(&sset);
 }
 
+static void blockSignalProf(sigset_t *set)
+{
+	sigemptyset(set);
+	sigaddset(set, SIGPROF);
+	sigprocmask(SIG_BLOCK, set, NULL);
+}
+
+static void unblockSignalProf(sigset_t *set)
+{
+	sigprocmask(SIG_UNBLOCK, set, NULL);
+}
+
+static void stoptimer()
+{
+	// Stops timer
+	timeValue.it_value.tv_sec = 0;
+	timeValue.it_value.tv_usec = 0;
+	if (setitimer(ITIMER_PROF, &timeValue, NULL) == -1)
+	{
+		printf("Error calling setitimer()");
+		exit(1);
+	}
+}
+
+static void runtimer(int interval_ms)
+{
+	timeValue.it_value.tv_sec = INTERVAL_SEC(interval_ms);
+	timeValue.it_value.tv_usec = INTERVAL_USEC(interval_ms);
+	timeValue.it_interval.tv_sec = 0;
+	timeValue.it_interval.tv_usec = 0;
+	if (setitimer(ITIMER_PROF, &timeValue, NULL) == -1)
+	{
+		printf("Error calling setitimer()");
+		exit(1);
+	}
+}
