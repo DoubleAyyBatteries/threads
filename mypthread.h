@@ -82,12 +82,19 @@ typedef struct Queue
 } queue;
 
 struct QNode *newNode(tcb *item);
-struct Queue *createQueue();
+struct Queue *makeQueue();
 void enqueue(struct Queue *q, tcb *item);
 tcb *dequeue(struct Queue *q);
 void sortqueue(struct Queue *q);
 
 static void schedule();
+static void handler();
+static void sched_RR(int quant);
+static void sched_PSJF(int quant);
+static void blockSignalProf(sigset_t *set);
+static void unblockSignalProf(sigset_t *set);
+static void stoptimer();
+static void runtimer(int interval_ms);
 
 /* Function Declarations: */
 
