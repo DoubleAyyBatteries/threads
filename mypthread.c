@@ -23,6 +23,9 @@ struct Queue *quitqueue;
 
 struct itimerval timeValue;
 
+
+static void printqueue();
+
 // int numthreads = 0;
 // YOUR CODE HERE
 
@@ -46,7 +49,6 @@ int mypthread_create(mypthread_t *thread, pthread_attr_t *attr, void *(*function
 
 		schedule_contex = (struct ucontext_t *)malloc(sizeof(struct ucontext_t));
 		schedule_contex->uc_link = NULL;
-		// void *schedule_contex_stack = malloc(STACK_SIZE); (Either?)
 		schedule_contex->uc_stack.ss_sp = malloc(STACK_SIZE);
 		schedule_contex->uc_stack.ss_size = STACK_SIZE;
 		schedule_contex->uc_stack.ss_flags = 0;
@@ -86,7 +88,6 @@ int mypthread_create(mypthread_t *thread, pthread_attr_t *attr, void *(*function
 	temp2TCB->ID = mpt_id;
 	*thread = mpt_id;
 	mpt_id++;
-	// numthreads++;
 	temp2TCB->status = READY;
 	temp2TCB->quant = 0;
 	temp2TCB->th_ct = (struct ucontext_t *)malloc(sizeof(struct ucontext_t));
@@ -124,8 +125,7 @@ int mypthread_create(mypthread_t *thread, pthread_attr_t *attr, void *(*function
 	// allocate heap space for this thread's stack
 	// after everything is all set, push this thread into the ready queue
 
-	// int id = *((int*) thread);
-
+	printqueue();
 	return 0;
 };
 
@@ -140,6 +140,7 @@ int mypthread_yield()
 	globalTCB->status = READY;
 	globalTCB->yield = 1;
 	swapcontext(globalTCB->th_ct, schedule_contex);
+	printqueue();
 	return 0;
 };
 
@@ -158,7 +159,7 @@ void mypthread_exit(void *value_ptr)
 	globalTCB->status = EXIT;
 	globalTCB->val_ptr = value_ptr;
 	enqueue(quitqueue, globalTCB);
-
+	printqueue();
 	// return;
 };
 
@@ -216,12 +217,12 @@ int mypthread_join(mypthread_t thread, void **value_ptr)
 	{
 		while (tempTCB->status != EXIT)
 		{
-			worker_yield();
+			mypthread_yield();
 		}
 		if (value_ptr != NULL)
 			*value_ptr = tempTCB->val_ptr;
 	}
-
+	printqueue();
 	return 0;
 };
 
@@ -238,6 +239,7 @@ int mypthread_mutex_init(mypthread_mutex_t *mutex, const pthread_mutexattr_t *mu
 	mutex->blocked_queue = makeQueue();
 
 	unblockSignalProf(&sset);
+	printqueue();
 	return 0;
 };
 
@@ -262,6 +264,7 @@ int mypthread_mutex_lock(mypthread_mutex_t *mutex)
 	}
 
 	unblockSignalProf(&sset);
+	printqueue();
 	return 0;
 };
 
@@ -278,7 +281,8 @@ int mypthread_mutex_unlock(mypthread_mutex_t *mutex)
 	atomic_flag_clear(&mutex->lock);
 	tcb *unblockedTCB = dequeue(mutex->blocked_queue);
 
-	if(unblockedTCB != NULL){
+	if(unblockedTCB != NULL)
+	{
 		unblockedTCB->status = READY;
 
 		if(!PSJF)
@@ -288,6 +292,7 @@ int mypthread_mutex_unlock(mypthread_mutex_t *mutex)
 	}
 
 	unblockSignalProf(&sset);
+	printqueue();
 	return 0;
 };
 
@@ -308,6 +313,7 @@ int mypthread_mutex_destroy(mypthread_mutex_t *mutex)
 	}
 
 	free(mutex->blocked_queue);
+	printqueue();
 	return 0;
 };
 
@@ -321,9 +327,15 @@ static void schedule()
 	// be sure to check the SCHED definition to determine which scheduling algorithm you should run
 	//   i.e. RR, PSJF or MLFQ
 	if(!PSJF)
+	{
 		sched_RR(DEFAULT_INTERVAL);
+		printqueue();
+	}
 	else
+	{
 		sched_PSJF(DEFAULT_INTERVAL);
+		printqueue();
+	}
 
 	return;
 }
@@ -331,6 +343,7 @@ static void schedule()
 /* Round Robin scheduling algorithm */
 static void sched_RR(int quant)
 {
+	printqueue();
 	// YOUR CODE HERE
 
 	// Your own implementation of RR
@@ -397,6 +410,7 @@ static void sched_RR(int quant)
 			setcontext(globalTCB->th_ct);
 		}
 	}
+	printqueue();
 }
 
 /* Preemptive PSJF (STCF) scheduling algorithm */
@@ -452,6 +466,7 @@ void enqueue(struct Queue *q, tcb *tcb)
 		q->rear->next = temp;
 		q->rear = temp;
 	}
+	
 }
 
 tcb *dequeue(struct Queue *q)
@@ -465,6 +480,7 @@ tcb *dequeue(struct Queue *q)
 
 	if (q->head == NULL)
 		q->rear = NULL;
+		free(q);
 
 	free(node);
 	return tcb;
@@ -472,6 +488,7 @@ tcb *dequeue(struct Queue *q)
 
 void sortqueue(struct Queue *q)
 {
+	printqueue();
 	sigset_t sset;
 	blockSignalProf(&sset);
 	struct Queue *temp = (struct Queue *)malloc(sizeof(struct Queue));
@@ -513,6 +530,7 @@ void sortqueue(struct Queue *q)
 	}
 	free(temp);
 	free(sorted);
+	printqueue();
 	unblockSignalProf(&sset);
 }
 
@@ -540,10 +558,10 @@ static void stoptimer()
 	}
 }
 
-static void runtimer(int interval_ms)
+static void runtimer(int length)
 {
-	timeValue.it_value.tv_sec = INTERVAL_SEC(interval_ms);
-	timeValue.it_value.tv_usec = INTERVAL_USEC(interval_ms);
+	timeValue.it_value.tv_sec = INTERVAL_SEC(length);
+	timeValue.it_value.tv_usec = INTERVAL_USEC(length);
 	timeValue.it_interval.tv_sec = 0;
 	timeValue.it_interval.tv_usec = 0;
 	if (setitimer(ITIMER_PROF, &timeValue, NULL) == -1)
@@ -551,4 +569,34 @@ static void runtimer(int interval_ms)
 		printf("Error calling setitimer()");
 		exit(1);
 	}
+}
+
+static void printqueue()
+{
+#if PSJF
+	fprintf(stdout, "********************\n");
+#endif
+	if (globalTCB != NULL)
+	{
+		fprintf(stdout, "|%d|  ", globalTCB->ID);
+	}
+	else
+	{
+		fprintf(stdout, "| |  ");
+	}
+	struct QNode *q;
+	if(PSJF)
+	{
+		q = psjfqueue->head;
+	}
+	else
+	{
+		q = rrqueue->head;
+	}
+	while (q != NULL)
+	{
+		fprintf(stdout, "%d->", q->tcb->ID);
+		q = q->next;
+	}
+	fprintf(stdout, "/\n");
 }
