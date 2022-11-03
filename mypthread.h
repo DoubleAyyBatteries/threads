@@ -11,14 +11,20 @@
 /* in order to use the built-in Linux pthread library as a control for benchmarking, you have to comment the USE_MYTHREAD macro */
 #define USE_MYTHREAD 1
 
+#define PSJF 1
+
 /* include lib header files that you need here: */
 #include <unistd.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdatomic.h>
 #include <ucontext.h>
 #include <sys/time.h>
+#include <signal.h>
+
+typedef uint mypthread_t;
 
 enum thread_state
 {
@@ -34,39 +40,57 @@ enum thread_lock_state
 	LOCKED
 };
 
-typedef uint mypthread_t;
-
-	/* add important states in a thread control block */
+/* add important states in a thread control block */
 typedef struct threadControlBlock
 {
-	// YOUR CODE HERE	
-	
 	// thread Id
+	mypthread_t ID;
 	// thread status
+	enum thread_state status;
 	// thread context
+	ucontext_t *th_ct;
 	// thread stack
-	// thread priority
-	// And more ...
 
+	// thread that has yielded
+	int yield;
+	// thread runtime increment
+	int quant;
+	// And more ...
+	void *val_ptr;
 } tcb;
 
 /* mutex struct definition */
 typedef struct mypthread_mutex_t
 {
-
 	// YOUR CODE HERE
-	
+	atomic_flag lock;
+	struct Queue *blocked_queue;
+
 } mypthread_mutex_t;
 
-
 // Feel free to add your own auxiliary data structures (linked list or queue etc...)
+typedef struct QNode
+{
+	tcb *tcb;
+	struct QNode *next;
+} qnode;
 
+typedef struct Queue
+{
+	struct QNode *head, *rear;
+} queue;
 
+struct QNode *newNode(tcb *item);
+struct Queue *createQueue();
+void enqueue(struct Queue *q, tcb *item);
+tcb *dequeue(struct Queue *q);
+
+static void schedule();
 
 /* Function Declarations: */
 
 /* create a new thread */
-int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*function)(void*), void * arg);
+int mypthread_create(mypthread_t *thread, pthread_attr_t *attr, void *(*function)(void *), void *arg);
 
 /* current thread voluntarily surrenders its remaining runtime for other threads to use */
 int mypthread_yield();
