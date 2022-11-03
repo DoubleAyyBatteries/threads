@@ -480,17 +480,10 @@ tcb *dequeue(struct Queue *q)
 
 void sortqueue(struct Queue *q)
 {
-	struct QNode *cue = q->head;
-	while (cue == NULL)
-	{
-		fprintf(stdout, "NOT NULL%d->", cue->tcb->ID);
-		cue = cue->next;
-	}
 	struct Queue *temp = makeQueue();
 	struct Queue *sorted = makeQueue();
 	enqueue(temp, dequeue(q));
 	int flag = 0;
-		printf("NOT NULL->");
 	while(q->head->tcb != NULL)
 	{
 		while(temp->head->tcb != NULL)
