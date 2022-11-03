@@ -13,10 +13,13 @@
 tcb *globalTCB;
 ucontext_t *schedule_contex;
 mypthread_t mpt_id = 0;
+suseconds_t responseTime = 0;
 
 struct Queue *rrqueue;
 struct Queue *psjfqueue;
 struct Queue *quitqueue;
+
+struct itimerval timeValue;
 
 // int numthreads = 0;
 // YOUR CODE HERE
@@ -330,9 +333,68 @@ static void sched_RR(int quant)
 
 	// Your own implementation of RR
 	// (feel free to modify arguments and return types)
-	
 
-	return;
+	getitimer(ITIMER_PROF, &timeValue);
+	int quantum_expired = timeValue.it_value.tv_usec > 0 ? 0 : 1;
+
+	if(PSJF)
+	{
+		struct itimerval remaining_time = timeValue;
+	}
+
+	stoptimer();
+
+	if (globalTCB != NULL && globalTCB->status != BLOCKED)
+	{
+		if (!quantum_expired && !globalTCB->yield)
+		{
+			mypthread_exit(NULL);
+		}
+		else
+		{
+			globalTCB->yield = 0;
+			
+			if(!PSJF)
+			{
+				enqueue(rrqueue, globalTCB);
+			}
+			else
+			{
+				if(quantum_expired)
+				{
+					globalTCB->quant++;
+				}
+				enqueue(psjfqueue, globalTCB);
+			}
+		}
+	}
+
+	globalTCB = dequeue(rrqueue);
+	
+	if (globalTCB != NULL)
+	{
+		
+		globalTCB->status = RUNNING;
+
+		if (globalTCB->quant == 0)
+		{
+			struct timeval initial_schedule_time;
+			gettimeofday(&initial_schedule_time, NULL);
+			responseTime = ((initial_schedule_time.tv_sec * 1000000 + initial_schedule_time.tv_usec) - (globalTCB->birthtime.tv_sec * 1000000 + globalTCB->birthtime.tv_usec));
+		}
+		globalTCB->quant++;
+		runtimer(quant);
+		setcontext(globalTCB->th_ct);
+	}
+	else
+	{
+		if(PSJF)
+		{
+			globalTCB = dequeue(psjfqueue);
+			runtimer(DEFAULT_INTERVAL);
+			setcontext(globalTCB->th_ct);
+		}
+	}
 }
 
 /* Preemptive PSJF (STCF) scheduling algorithm */
@@ -343,17 +405,8 @@ static void sched_PSJF()
 	// Your own implementation of PSJF (STCF)
 	// (feel free to modify arguments and return types)
 
-	return;
-}
-
-/* Preemptive MLFQ scheduling algorithm */
-/* Graduate Students Only */
-static void sched_MLFQ()
-{
-	// YOUR CODE HERE
-
-	// Your own implementation of MLFQ
-	// (feel free to modify arguments and return types)
+	sortQueue(psjfqueue);
+	sched_RR(DEFAULT_INTERVAL);
 
 	return;
 }
@@ -414,3 +467,51 @@ tcb *dequeue(struct Queue *q)
 	free(node);
 	return tcb;
 }
+
+void sortqueue(struct Queue *q)
+{
+	sigset_t sset;
+	blockSignalProf(&sset);
+	struct Queue *temp = (struct Queue *)malloc(sizeof(struct Queue));
+	struct Queue *sorted = (struct Queue *)malloc(sizeof(struct Queue));
+	enqueue(temp, dequeue(q));
+	int flag = 0;
+	while(q->head != NULL)
+	{
+		while(temp->head != NULL)
+		{
+			if(temp->head->tcb->quant < q->head->tcb->quant
+			|| (temp->head->tcb->quant == q->head->tcb->quant && temp->head->tcb->birthtime.tv_usec > q->head->tcb->birthtime.tv_usec))
+			{
+				enqueue(sorted, dequeue(temp));
+			}
+			else if (temp->head->tcb->quant > q->head->tcb->quant
+			|| (temp->head->tcb->quant == q->head->tcb->quant && temp->head->tcb->birthtime.tv_usec < q->head->tcb->birthtime.tv_usec))
+			{
+				enqueue(sorted, dequeue(q));
+				flag = 1;
+				break;
+			}
+		}
+		if(!flag)
+		{
+			enqueue(sorted, dequeue(q));
+		}
+		while(temp->head != NULL)
+		{
+			enqueue(sorted, dequeue(temp));
+		}
+		while(sorted->head != NULL)
+		{
+			enqueue(temp, dequeue(sorted));
+		}
+	}
+	while(temp->head != NULL)
+	{
+		enqueue(q, dequeue(temp));
+	}
+	free(temp);
+	free(sorted);
+	unblockSignalProf(&sset);
+}
+
