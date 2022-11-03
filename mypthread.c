@@ -490,16 +490,15 @@ void sortqueue(struct Queue *q)
 			{
 				enqueue(sorted, dequeue(q));
 				flag = 1;
-				break;
+				while(temp->head != NULL)
+				{
+					enqueue(sorted, dequeue(temp));
+				}
 			}
 		}
 		if(!flag)
 		{
 			enqueue(sorted, dequeue(q));
-		}
-		while(temp->head != NULL)
-		{
-			enqueue(sorted, dequeue(temp));
 		}
 		while(sorted->head != NULL)
 		{
