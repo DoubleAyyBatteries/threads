@@ -23,10 +23,6 @@ struct Queue *quitqueue;
 
 struct itimerval timeValue;
 
-
-static void printqueue();
-
-// int numthreads = 0;
 // YOUR CODE HERE
 
 /* create a new thread */
@@ -52,6 +48,7 @@ int mypthread_create(mypthread_t *thread, pthread_attr_t *attr, void *(*function
 		schedule_contex->uc_stack.ss_sp = malloc(STACK_SIZE);
 		schedule_contex->uc_stack.ss_size = STACK_SIZE;
 		schedule_contex->uc_stack.ss_flags = 0;
+		
 		getcontext(schedule_contex);
 		makecontext(schedule_contex, schedule, 0);
 
@@ -80,6 +77,10 @@ int mypthread_create(mypthread_t *thread, pthread_attr_t *attr, void *(*function
 		tempTCB->th_ct->uc_stack.ss_sp = tempstack;
 		tempTCB->th_ct->uc_stack.ss_size = STACK_SIZE;
 		tempTCB->th_ct->uc_stack.ss_flags = 0;
+		struct timeval firstBirth;
+		gettimeofday(&firstBirth, NULL);
+		tempTCB->birthtime = firstBirth;
+		
 
 		globalTCB = tempTCB;
 	}
@@ -110,6 +111,9 @@ int mypthread_create(mypthread_t *thread, pthread_attr_t *attr, void *(*function
 	temp2TCB->th_ct->uc_stack.ss_sp = temp2stack;
 	temp2TCB->th_ct->uc_stack.ss_size = STACK_SIZE;
 	temp2TCB->th_ct->uc_stack.ss_flags = 0;
+	struct timeval birth;
+	gettimeofday(&birth, NULL);
+	temp2TCB->birthtime = birth;
 
 	makecontext(temp2TCB->th_ct, (void *)function, 1, arg);
 
@@ -125,7 +129,6 @@ int mypthread_create(mypthread_t *thread, pthread_attr_t *attr, void *(*function
 	// allocate heap space for this thread's stack
 	// after everything is all set, push this thread into the ready queue
 
-	printqueue();
 	return 0;
 };
 
@@ -140,7 +143,6 @@ int mypthread_yield()
 	globalTCB->status = READY;
 	globalTCB->yield = 1;
 	swapcontext(globalTCB->th_ct, schedule_contex);
-	printqueue();
 	return 0;
 };
 
@@ -159,7 +161,7 @@ void mypthread_exit(void *value_ptr)
 	globalTCB->status = EXIT;
 	globalTCB->val_ptr = value_ptr;
 	enqueue(quitqueue, globalTCB);
-	printqueue();
+	unblockSignalProf(&sset);
 	// return;
 };
 
@@ -222,7 +224,6 @@ int mypthread_join(mypthread_t thread, void **value_ptr)
 		if (value_ptr != NULL)
 			*value_ptr = tempTCB->val_ptr;
 	}
-	printqueue();
 	return 0;
 };
 
@@ -239,7 +240,6 @@ int mypthread_mutex_init(mypthread_mutex_t *mutex, const pthread_mutexattr_t *mu
 	mutex->blocked_queue = makeQueue();
 
 	unblockSignalProf(&sset);
-	printqueue();
 	return 0;
 };
 
@@ -264,7 +264,6 @@ int mypthread_mutex_lock(mypthread_mutex_t *mutex)
 	}
 
 	unblockSignalProf(&sset);
-	printqueue();
 	return 0;
 };
 
@@ -292,7 +291,6 @@ int mypthread_mutex_unlock(mypthread_mutex_t *mutex)
 	}
 
 	unblockSignalProf(&sset);
-	printqueue();
 	return 0;
 };
 
@@ -313,7 +311,6 @@ int mypthread_mutex_destroy(mypthread_mutex_t *mutex)
 	}
 
 	free(mutex->blocked_queue);
-	printqueue();
 	return 0;
 };
 
@@ -329,12 +326,10 @@ static void schedule()
 	if(!PSJF)
 	{
 		sched_RR(DEFAULT_INTERVAL);
-		printqueue();
 	}
 	else
 	{
 		sched_PSJF(DEFAULT_INTERVAL);
-		printqueue();
 	}
 
 	return;
@@ -343,7 +338,6 @@ static void schedule()
 /* Round Robin scheduling algorithm */
 static void sched_RR(int quant)
 {
-	printqueue();
 	// YOUR CODE HERE
 
 	// Your own implementation of RR
@@ -410,7 +404,6 @@ static void sched_RR(int quant)
 			setcontext(globalTCB->th_ct);
 		}
 	}
-	printqueue();
 }
 
 /* Preemptive PSJF (STCF) scheduling algorithm */
@@ -480,7 +473,6 @@ tcb *dequeue(struct Queue *q)
 
 	if (q->head == NULL)
 		q->rear = NULL;
-		free(q);
 
 	free(node);
 	return tcb;
@@ -488,24 +480,31 @@ tcb *dequeue(struct Queue *q)
 
 void sortqueue(struct Queue *q)
 {
-	printqueue();
-	sigset_t sset;
-	blockSignalProf(&sset);
-	struct Queue *temp = (struct Queue *)malloc(sizeof(struct Queue));
-	struct Queue *sorted = (struct Queue *)malloc(sizeof(struct Queue));
+	struct QNode *cue = q->head;
+	while (cue == NULL)
+	{
+		fprintf(stdout, "NOT NULL%d->", cue->tcb->ID);
+		cue = cue->next;
+	}
+	struct Queue *temp = makeQueue();
+	struct Queue *sorted = makeQueue();
 	enqueue(temp, dequeue(q));
 	int flag = 0;
-	while(q->head != NULL)
+		printf("NOT NULL->");
+	while(q->head->tcb != NULL)
 	{
-		while(temp->head != NULL)
+		while(temp->head->tcb != NULL)
 		{
+			printf("%d", temp->head->tcb->ID);
 			if(temp->head->tcb->quant < q->head->tcb->quant
-			|| (temp->head->tcb->quant == q->head->tcb->quant && temp->head->tcb->birthtime.tv_usec > q->head->tcb->birthtime.tv_usec))
+			|| (temp->head->tcb->quant == q->head->tcb->quant &&
+			temp->head->tcb->birthtime.tv_usec > q->head->tcb->birthtime.tv_usec))
 			{
 				enqueue(sorted, dequeue(temp));
 			}
 			else if (temp->head->tcb->quant > q->head->tcb->quant
-			|| (temp->head->tcb->quant == q->head->tcb->quant && temp->head->tcb->birthtime.tv_usec < q->head->tcb->birthtime.tv_usec))
+			|| (temp->head->tcb->quant == q->head->tcb->quant &&
+			temp->head->tcb->birthtime.tv_usec < q->head->tcb->birthtime.tv_usec))
 			{
 				enqueue(sorted, dequeue(q));
 				flag = 1;
@@ -530,8 +529,6 @@ void sortqueue(struct Queue *q)
 	}
 	free(temp);
 	free(sorted);
-	printqueue();
-	unblockSignalProf(&sset);
 }
 
 static void blockSignalProf(sigset_t *set)
@@ -569,34 +566,4 @@ static void runtimer(int length)
 		printf("Error calling setitimer()");
 		exit(1);
 	}
-}
-
-static void printqueue()
-{
-#if PSJF
-	fprintf(stdout, "********************\n");
-#endif
-	if (globalTCB != NULL)
-	{
-		fprintf(stdout, "|%d|  ", globalTCB->ID);
-	}
-	else
-	{
-		fprintf(stdout, "| |  ");
-	}
-	struct QNode *q;
-	if(PSJF)
-	{
-		q = psjfqueue->head;
-	}
-	else
-	{
-		q = rrqueue->head;
-	}
-	while (q != NULL)
-	{
-		fprintf(stdout, "%d->", q->tcb->ID);
-		q = q->next;
-	}
-	fprintf(stdout, "/\n");
 }
