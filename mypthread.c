@@ -19,7 +19,7 @@ suseconds_t responseTime = 0;
 
 struct Queue *rrqueue;
 struct Queue *psjfqueue;
-struct Queue *quitqueue;
+// struct Queue *quitqueue;
 struct Queue *temp;
 struct Queue *sorted;
 
@@ -59,7 +59,7 @@ int mypthread_create(mypthread_t *thread, pthread_attr_t *attr, void *(*function
 		else
 			psjfqueue = makeQueue();
 
-		quitqueue = makeQueue();
+		// quitqueue = makeQueue();
 
 		tcb *tempTCB = (tcb *)malloc(sizeof(tcb));
 		tempTCB->ID = mpt_id;
@@ -154,6 +154,8 @@ void mypthread_exit(void *value_ptr)
 
 	// preserve the return value pointer if not NULL
 	// deallocate any dynamic memory allocated when starting this thread
+	sigset_t sset;
+	blockSignalProf(&sset);
 
 	free(globalTCB->th_ct->uc_stack.ss_sp);
 
@@ -163,9 +165,10 @@ void mypthread_exit(void *value_ptr)
 
 	globalTCB->val_ptr = value_ptr;
 
-	enqueue(quitqueue, globalTCB);
-
+	// enqueue(quitqueue, globalTCB);
+	free(globalTCB);
 	globalTCB = NULL;
+	unblockSignalProf(&sset);
 	setcontext(schedule_contex);
 	// return;
 };
@@ -191,11 +194,11 @@ int mypthread_join(mypthread_t thread, void **value_ptr)
 		}
 		if (tempNode == NULL)
 		{
-			tempNode = quitqueue->head;
-			while (tempNode != NULL && tempNode->tcb->ID != thread)
-			{
-				tempNode = tempNode->next;
-			}
+			// tempNode = quitqueue->head;
+			// while (tempNode != NULL && tempNode->tcb->ID != thread)
+			// {
+			// 	tempNode = tempNode->next;
+			// }
 		}
 	}
 	else
@@ -207,11 +210,11 @@ int mypthread_join(mypthread_t thread, void **value_ptr)
 		}
 		if (tempNode == NULL)
 		{
-			tempNode = quitqueue->head;
-			while (tempNode != NULL && tempNode->tcb->ID != thread)
-			{
-				tempNode = tempNode->next;
-			}
+			// tempNode = quitqueue->head;
+			// while (tempNode != NULL && tempNode->tcb->ID != thread)
+			// {
+			// 	tempNode = tempNode->next;
+			// }
 		}
 	}
 
@@ -306,6 +309,8 @@ int mypthread_mutex_destroy(mypthread_mutex_t *mutex)
 	// YOUR CODE HERE
 
 	// deallocate dynamic memory allocated during mypthread_mutex_init
+	sigset_t sset;
+	blockSignalProf(&sset);
 	qnode *tempNode = mutex->blocked_queue->head;
 	qnode *prev;
 
@@ -313,10 +318,23 @@ int mypthread_mutex_destroy(mypthread_mutex_t *mutex)
 	{
 		prev = tempNode;
 		tempNode = tempNode->next;
+		if(prev->tcb != NULL)
+		{
+			if(prev->tcb->th_ct != NULL)
+			{
+				if(prev->tcb->th_ct->uc_stack.ss_sp != NULL)
+				{
+					free(prev->tcb->th_ct->uc_stack.ss_sp);
+				}
+				free(prev->tcb->th_ct);
+			}
+			free(prev->tcb);
+		}
 		free(prev);
 	}
 
 	free(mutex->blocked_queue);
+	unblockSignalProf(&sset);
 	return 0;
 };
 
@@ -469,7 +487,7 @@ void enqueue(struct Queue *q, tcb *tcb)
 
 tcb *dequeue(struct Queue *q)
 {
-	if (q->head == NULL)
+	if (q == NULL || q->head == NULL)
 		return NULL;
 
 	struct QNode *node = q->head;
@@ -486,49 +504,57 @@ tcb *dequeue(struct Queue *q)
 void swap(struct QNode *a, struct QNode *b) 
 { 
     tcb *tempTCB = (tcb *)malloc(sizeof(tcb));
-	memcpy(tempTCB, a->tcb);
+	memcpy(tempTCB, a->tcb, sizeof(tcb));
 	qnode *temp = newNode(tempTCB);
-	memcpy(a->tcb, b->tcb);
-	memcpy(b->tcb, tempTCB);
+	memcpy(a->tcb, b->tcb, sizeof(tcb));
+	memcpy(b->tcb, tempTCB, sizeof(tcb));
 	free(tempTCB);
 } 
 
 void sortqueue(struct Queue *q)
 {
-	int swapped;
-	qnode *ptr1;
-	qnode *lptr = NULL;
-
-	/* Checking for empty list */
-	if (q == NULL || q->head == NULL)
-		return;
-
-	qnode *qstart = q->head;
-
-	do
+	struct Queue *temp = makeQueue();
+	struct Queue *sorted = makeQueue();
+	enqueue(temp, dequeue(q));
+	int flag = 0;
+	while(q->head != NULL && q->head->tcb != NULL)
 	{
-		swapped = 0;
-		ptr1 = qstart;
-
-		while (ptr1->next != lptr)
+		while(temp->head != NULL && temp->head->tcb != NULL)
 		{
-			if (ptr1->tcb->quant > ptr1->next->tcb->quant)
+			//printf("%d", temp->head->tcb->ID);
+			if(temp->head->tcb->quant < q->head->tcb->quant
+			|| (temp->head->tcb->quant == q->head->tcb->quant &&
+			temp->head->tcb->birthtime.tv_usec > q->head->tcb->birthtime.tv_usec))
 			{
-				swap(ptr1, ptr1->next);
-				swapped = 1;
+				enqueue(sorted, dequeue(temp));
 			}
-			else if (ptr1->tcb->quant == ptr1->next->tcb->quant)
+			else if (temp->head->tcb->quant > q->head->tcb->quant
+			|| (temp->head->tcb->quant == q->head->tcb->quant &&
+			temp->head->tcb->birthtime.tv_usec < q->head->tcb->birthtime.tv_usec))
 			{
-				if (ptr1->tcb->birthtime.tv_usec < ptr1->next->tcb->birthtime.tv_usec)
+				enqueue(sorted, dequeue(q));
+				flag = 1;
+				while(temp->head != NULL)
 				{
-					swap(ptr1, ptr1->next);
-					swapped = 1;
+					enqueue(sorted, dequeue(temp));
 				}
 			}
-			ptr1 = ptr1->next;
 		}
-		lptr = ptr1;
-	} while (swapped);
+		if(!flag)
+		{
+			enqueue(sorted, dequeue(q));
+		}
+		while(sorted->head != NULL)
+		{
+			enqueue(temp, dequeue(sorted));
+		}
+	}
+	while(temp->head != NULL)
+	{
+		enqueue(q, dequeue(temp));
+	}
+	free(temp);
+	free(sorted);
 }
 
 static void blockSignalProf(sigset_t *set)
